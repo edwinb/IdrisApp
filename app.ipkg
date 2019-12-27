@@ -1,0 +1,8 @@
+package effects
+
+sourcedir = "src"
+
+modules = Control.App,
+          
+          Control.App.Console
+
