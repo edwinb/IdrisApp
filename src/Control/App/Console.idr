@@ -12,5 +12,6 @@ PrimIO e => Console e where
   putStr str = primIO $ putStr str
   getStr = primIO $ getLine
 
+export
 putStrLn : Console e => String -> App e ()
 putStrLn str = putStr (str ++ "\n")
