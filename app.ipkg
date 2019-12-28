@@ -4,5 +4,6 @@ sourcedir = "src"
 
 modules = Control.App,
           
-          Control.App.Console
+          Control.App.Console,
+          Control.App.FileIO
 
