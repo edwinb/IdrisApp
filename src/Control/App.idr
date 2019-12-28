@@ -163,6 +163,9 @@ HasEff (Exc e) es => Exception e es where
   throw = Throw
   catch = Catch
 
+-- Define some useful generic exceptions here?
+-- OS, IO, etc? 'SomeException'
+
 public export 
 interface PrimIO es where
   primIO : IO a -> AppE l es a
@@ -188,6 +191,10 @@ App e a = forall l . AppE l e a
 public export
 AppL : List Effect -> Type -> Type
 AppL = AppE Linear
+
+public export
+AppEx : List Effect -> Type -> Type
+AppEx = AppE NonLinear
 
 infix 5 @@
 
