@@ -13,7 +13,7 @@ count (S k) x
          putStr (show val ++ "\n")
          count k x
 
-cmain : App [PIO] ()
+cmain : App [Sys] ()
 cmain
     = do new 0 $
          count 10000 2

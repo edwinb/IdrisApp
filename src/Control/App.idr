@@ -7,7 +7,7 @@ public export
 data Effect : Type where
      St : Type -> Effect
      Exc : Type -> Effect
-     PIO : Effect
+     Sys : Effect
 
 public export
 data HasEff : Effect -> List Effect -> Type where
@@ -17,12 +17,12 @@ data HasEff : Effect -> List Effect -> Type where
 public export
 data NotException : Effect -> Type where
      StNotE : NotException (St t)
-     PIONotE : NotException PIO
+     SysNotE : NotException Sys
 
 public export
 data NotState : Effect -> Type where
      ExcNotS : NotState (Exc t)
-     PIONotS : NotState PIO
+     SysNotS : NotState Sys
 
 public export
 data Linear : List Effect -> Type where
@@ -39,7 +39,7 @@ data Env : List Effect -> Type where
      None : Env []
      Ref : IORef t -> Env es -> Env (St t :: es)
      SkipE : Env es -> Env (Exc t :: es)
-     SkipP : Env es -> Env (PIO :: es)
+     SkipP : Env es -> Env (Sys :: es)
 
 getState : Env es -> (p : HasEff (St t) es) -> IORef t
 getState (Ref r env) Here = r
@@ -52,7 +52,7 @@ public export
 execTy [] ty = ty
 execTy (St t :: es) ty = execTy es ty
 execTy (Exc e :: es) ty = Either e (execTy es ty)
-execTy (PIO :: es) ty = execTy es ty
+execTy (Sys :: es) ty = execTy es ty
 
 export
 data App : List Effect -> Type -> Type where
@@ -74,7 +74,7 @@ data App : List Effect -> Type -> Type where
               (ok : a -> App es b) ->
               (err : e -> App es b) -> App es b
      
-     Prim : HasEff PIO es => PrimIO a -> App es a
+     Prim : HasEff Sys es => PrimIO a -> App es a
 
 export
 Functor (App es) where
@@ -188,11 +188,11 @@ interface PrimIO es where
   primIO : IO a -> App es a
 
 export
-HasEff PIO es => PrimIO es where
+HasEff Sys es => PrimIO es where
   primIO = Prim . toPrim
 
 export
-run : App [PIO] a -> IO a
+run : App [Sys] a -> IO a
 run prog = exec (SkipP None) prog pure
 
 public export

@@ -22,7 +22,7 @@ readFile f
                 else do str <- fGetStr h
                         read (str :: acc) h
 
-amain : App [PIO] ()
+amain : App [Sys] ()
 amain = handle (readFile "ReadFile.idr")
                (\str => putStrLn $ "Content:\n" ++ show str)
                (\err : FileError => 
