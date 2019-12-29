@@ -5,7 +5,7 @@ import Control.App.Console
 
 interface Console e => StateEx e where
   inc : App e Int
-  testRes : String -> AppE NonLinear e Bool
+  testRes : String -> App e Bool
 
 Has [Console, State Int, Exception String] e => StateEx e where
   inc
@@ -21,7 +21,7 @@ Has [Console, State Int, Exception String] e => StateEx e where
                 _ => do putStrLn $ "Hello " ++ str ++ " " ++ show count
                         pure False
 
-test : Has [StateEx] e => AppE NonLinear e ()
+test : Has [StateEx] e => App e ()
 test
     = do putStr "Name: "
          inc
