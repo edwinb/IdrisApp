@@ -8,15 +8,15 @@ import Data.List
 import Data.Strings
 
 readFile : FileIO e =>
-           String -> AppEx e String
+           String -> App e String
 readFile f
     = withFile f Read throw $ \h =>
         do content <- read [] h
            pure (fastAppend content)
   where
-    read : List String -> File -> AppEx e (List String)
+    read : List String -> File -> App e (List String)
     read acc h
-        = do eof <- FileIO.fEOF h
+        = do eof <- fEOF h
              if eof
                 then pure (reverse acc)
                 else do str <- fGetStr h

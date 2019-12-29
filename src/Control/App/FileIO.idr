@@ -6,11 +6,11 @@ import public System.File
 public export
 interface Exception FileError e => FileIO e where
   withFile : String -> Mode -> 
-             (onError : FileError -> AppEx e a) ->
-             (onOpen : File -> AppEx e a) -> 
-             AppEx e a
-  fGetStr : File -> AppEx e String
-  fPutStr : File -> String -> AppEx e ()
+             (onError : FileError -> App e a) ->
+             (onOpen : File -> App e a) -> 
+             App e a
+  fGetStr : File -> App e String
+  fPutStr : File -> String -> App e ()
   fEOF : File -> App e Bool
 
 -- TODO : Add Binary File IO with buffers
