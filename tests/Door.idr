@@ -9,15 +9,15 @@ data Door : DoorState -> Type where
      MkDoor : (d : DoorState) -> Door d
 
 interface Linear e => DoorI e where
-  1 newDoor : (1 p : (1 d : Door CLOSED) -> App e ()) -> App e ()
-  1 deleteDoor : (1 d : Door CLOSED) -> App e ()
+  newDoor : (1 p : (1 d : Door CLOSED) -> App e ()) -> App e ()
+  deleteDoor : (1 d : Door CLOSED) -> App e ()
 
 Has [Linear, Console] e => DoorI e where
-  newDoor f 
+  newDoor f
       = let (>>=) = bindL in
             do putStrLn "Door created"
                f (MkDoor CLOSED)
-  deleteDoor (MkDoor _) 
+  deleteDoor (MkDoor _)
       = do putStrLn "Door destroyed"
            pure ()
 
@@ -43,5 +43,3 @@ doorProg
 
 foo : IO ()
 foo = run doorProg
-
-

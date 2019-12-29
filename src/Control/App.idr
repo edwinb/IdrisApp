@@ -16,13 +16,23 @@ data HasEff : Effect -> List Effect -> Type where
 
 public export
 data NotException : Effect -> Type where
-     StNot : NotException (St t)
-     PIONot : NotException PIO
+     StNotE : NotException (St t)
+     PIONotE : NotException PIO
+
+public export
+data NotState : Effect -> Type where
+     ExcNotS : NotState (Exc t)
+     PIONotS : NotState PIO
 
 public export
 data Linear : List Effect -> Type where
      EmptyLin : Linear []
      RestLin : NotException e => Linear es -> Linear (e :: es)
+
+public export
+data Stateless : List Effect -> Type where
+     EmptySt : Stateless []
+     RestSt : NotState e => Stateless es -> Stateless (e :: es)
 
 export
 data Env : List Effect -> Type where
