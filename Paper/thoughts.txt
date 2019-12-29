@@ -1,0 +1,29 @@
+Idris 2: Safe Resource Protocols with Linear and Dependent Types 
+
+Expressive type systems allow us to make illegal states unrepresentable.
+Moreover, by making programming an interactive conversation with the type
+checker (rather than submitting program text to the 'oracle') more
+expressive type systems mean the feedback we get can be more immediately
+valuable.
+
+* Dependent types make precise /what/ happens
+* Adding linear types makes precise /when/ it happens
+
+Linear types are quite low level, but good as a primitive interface to
+external resources which can only be acted on in a particular state. We'll
+make high level interfaces on top of them - not using linear types - but
+internally we'll use the linearity to make sure we're using the external
+resources correctly.
+Turns out they're also handy for communication over channels (as we already
+know from session types...)
+
+Plan:
+- Introduce Idris 2
+- QTT for erasure, QTT for linearity
+  - Show how IO works
+
+- Do the Door inside IO
+
+- Introduce 'App', using interfaces to extend capabilities of IO monad.
+- Do Sockets
+- Do Session Types
