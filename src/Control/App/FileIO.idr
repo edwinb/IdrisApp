@@ -32,7 +32,7 @@ toFileEx PermissionDenied = PermissionDenied
 toFileEx FileExists = FileExists
 
 public export
-interface Exception FileEx e => FileIO e where
+interface Has [Exception FileEx] e => FileIO e where
   withFile : String -> Mode -> 
              (onError : FileEx -> App e a) ->
              (onOpen : File -> App e a) -> 
@@ -77,3 +77,10 @@ Has [PrimIO, Exception FileEx] e => FileIO e where
            pure ()
 
   fEOF f = primIO $ fEOF f
+
+export
+withFileIO : Has [PrimIO] e =>
+             App (Exc FileEx :: e) a ->
+             (ok : a -> App e b) ->
+             (err : FileEx -> App e b) -> App e b
+withFileIO prog ok err = handle prog ok err

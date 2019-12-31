@@ -73,7 +73,8 @@ data App : List Effect -> Type -> Type where
      Handle : App (Exc e :: es) a ->
               (ok : a -> App es b) ->
               (err : e -> App es b) -> App es b
-     
+
+     Fork : HasEff Sys es => App es () -> App es ()
      Prim : HasEff Sys es => PrimIO a -> App es a
 
 export
@@ -108,6 +109,28 @@ findRes None _ _ = Nothing
 findRes _ Here (Left ex) = Just ex
 findRes _ Here _ = Nothing
 
+copyEnv : Env es -> IO (Env es)
+copyEnv None = pure None
+copyEnv (Ref t env)
+    = do val <- readIORef t
+         t' <- newIORef val
+         env' <- copyEnv env
+         pure (Ref t' env')
+copyEnv (SkipE env)
+    = do env' <- copyEnv env
+         pure (SkipE env')
+copyEnv (SkipP env)
+    = do env' <- copyEnv env
+         pure (SkipP env')
+
+clearEnv : Env es -> IO (execTy es ())
+clearEnv None = pure ()
+clearEnv (Ref t env) = clearEnv env
+clearEnv (SkipE env)
+    = do e' <- clearEnv env
+         pure (Right e')
+clearEnv (SkipP env) = clearEnv env
+
 exec : Env es -> App es t -> (t -> IO (execTy es a)) -> IO (execTy es a)
 exec env (Pure val) k = k val
 exec env (Bind act next) k 
@@ -140,6 +163,11 @@ exec env (Catch @{p} prog err) k
          case findRes env p res of
               Just ex => exec env (err ex) k
               Nothing => pure res
+exec env (Fork proc) k
+    = do fork (do env' <- copyEnv env
+                  exec env proc (\u => clearEnv env)
+                  pure ())
+         k ()
 exec env (Prim io) k 
     = do op <- primIO io
          k op
@@ -182,14 +210,18 @@ HasEff (Exc e) es => Exception e es where
 
 -- Define some useful generic exceptions here?
 -- OS, IO, etc? 'SomeException'
+-- IOException, define a few POSIX services - files, directories, etc...
 
 public export 
 interface PrimIO es where
   primIO : IO a -> App es a
+  -- Copies the environment, to make sure states are local to threads
+  fork : App es () -> App es ()
 
 export
 HasEff Sys es => PrimIO es where
   primIO = Prim . toPrim
+  fork = Fork
 
 export
 run : App [Sys] a -> IO a
