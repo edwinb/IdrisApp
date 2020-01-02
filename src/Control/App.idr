@@ -15,6 +15,12 @@ data HasEff : Effect -> List Effect -> Type where
      There : HasEff e es -> HasEff e (e' :: es)
 
 public export
+0 Has : List (a -> Type) -> a -> Type
+Has [] es = ()
+Has [e] es = e es
+Has (e :: es') es = (e es, Has es' es)
+
+public export
 data NotException : Effect -> Type where
      StNotE : NotException (St t)
      SysNotE : NotException Sys
@@ -47,67 +53,174 @@ getState (Ref r env) (There p) = getState env p
 getState (SkipE env) (There p) = getState env p
 getState (SkipP env) (There p) = getState env p
 
+data OneOf : List Type -> Type where
+     First : e -> OneOf (e :: es)
+     Later : OneOf es -> OneOf (e :: es)
+
+Uninhabited (OneOf []) where
+  uninhabited (First x) impossible
+  uninhabited (Later x) impossible
+
 public export
+0 excTy : List Effect -> List Type
+excTy [] = []
+excTy (St t :: es) = excTy es
+excTy (Exc e :: es) = e :: excTy es
+excTy (Sys :: es) = excTy es
+
 0 execTy : List Effect -> Type -> Type
-execTy [] ty = ty
-execTy (St t :: es) ty = execTy es ty
-execTy (Exc e :: es) ty = Either e (execTy es ty)
-execTy (Sys :: es) ty = execTy es ty
+execTy es ty = Either (OneOf (excTy es)) ty
 
 export
 data App : List Effect -> Type -> Type where
-     Pure : (x : a) -> App es a
-     Bind : App es a -> (a -> App es b) -> App es b
-     BindL : Linear es =>
-             (1 act : App es a) -> 
-             (1 k : a -> App es b) -> App es b
+     MkApp : (1 prog : Env e -> IO (execTy e t)) -> App e t
 
-     New : a -> App (St a :: es) t -> App es t
-     Get : HasEff (St t) es => App es t
-     Put : HasEff (St t) es => t -> App es ()
+pureApp : a -> App e a
+pureApp x = MkApp (\env => pure (Right x))
 
-     Throw : HasEff (Exc e) es => e -> App es a
-     Catch : HasEff (Exc e) es => 
-             App es a -> 
-             (err : e -> App es a) -> App es a
-     Handle : App (Exc e :: es) a ->
-              (ok : a -> App es b) ->
-              (err : e -> App es b) -> App es b
+bindApp : App e a -> (a -> App e b) -> App e b
+bindApp (MkApp prog) k
+    = MkApp $ \env =>
+          do Right res <- prog env
+                   | Left err => pure (Left err)
+             let MkApp ka = k res
+             ka env
 
-     Fork : HasEff Sys es => App es () -> App es ()
-     Prim : HasEff Sys es => PrimIO a -> App es a
+absurdWith : (1 v : a) -> OneOf [] -> any
+absurdWith v (First p) impossible
+
+-- Prove that we don't need the error checking case in 'bindL', so that the
+-- continuation will definitely be used
+noError : (1 k : something) ->
+          Linear e -> OneOf (excTy e) -> Env e -> 
+          any
+noError k EmptyLin p None = absurdWith k p
+noError k (RestLin p) (Later q) (SkipE env) = noError k p q env
+noError k (RestLin p) q (SkipP env) = noError k p q env
+noError k (RestLin p) q (Ref r env) = noError k p q env
+
+export
+bindL : Linear e => (1 act : App e a) -> (1 k : a -> App e b) -> App e b
+bindL (MkApp prog) k
+    = MkApp $ \env =>
+          io_bind (prog env) $ \p =>
+             case p of
+                  Left err => noError k %search err env
+                  Right res => 
+                         case k res of
+                              MkApp iokr => iokr env
+
+export
+lift : App e t -> App (eff :: e) t
+lift (MkApp p)
+    = MkApp (\env => 
+          case env of
+               Ref r env' => p env'
+               SkipP env' => p env'
+               SkipE env' => 
+                  do res <- p env'
+                     case res of
+                          Left err => pure (Left (Later err))
+                          Right ok => pure (Right ok))
 
 export
 Functor (App es) where
-  map f ap = Bind ap $ \ap' => Pure (f ap')
+  map f ap = bindApp ap $ \ap' => pureApp (f ap')
 
 export
 Applicative (App es) where
-  pure = Pure
-  (<*>) f a = Bind f $ \f' =>
-              Bind a $ \a' => pure (f' a')
+  pure = pureApp
+  (<*>) f a = bindApp f $ \f' =>
+              bindApp a $ \a' => pure (f' a')
 
 export
 Monad (App es) where
-  (>>=) = Bind
+  (>>=) = bindApp
 
-throwIn : Env es -> HasEff (Exc e) es -> e -> 
-          IO (execTy (es ++ rest) a)
-throwIn (SkipE es) Here e = pure (Left e)
-throwIn (Ref r es) (There p) e = throwIn es p e
-throwIn (SkipE es) (There p) e 
-    = do res <- throwIn es p e
-         pure (Right res)
-throwIn (SkipP es) (There p) e = throwIn es p e
+export
+new : a -> App (St a :: es) t -> App es t
+new val (MkApp prog)
+    = MkApp $ \env => 
+          do ref <- newIORef val
+             prog (Ref ref env)
 
-findRes : Env es -> HasEff (Exc e) es -> execTy es a -> Maybe e
-findRes (SkipE env) (There p) (Left _) = Nothing -- wrong exception
-findRes (SkipE env) (There p) (Right r) = findRes env p r
-findRes (Ref r env) (There p) t = findRes env p t
-findRes (SkipP env) (There p) t = findRes env p t
-findRes None _ _ = Nothing
-findRes _ Here (Left ex) = Just ex
-findRes _ Here _ = Nothing
+public export
+interface State t es where
+  get : App es t
+  put : t -> App es ()
+
+export
+HasEff (St t) es => State t es where
+  get
+      = MkApp $ \env =>
+            do let ref = getState env %search
+               val <- readIORef ref
+               pure (Right val)
+  put val
+      = MkApp $ \env =>
+            do let ref = getState env %search
+               writeIORef ref val
+               pure (Right ())
+
+public export
+interface Exception e es where
+  throw : e -> App es a
+  catch : App es a -> (err : e -> App es a) -> App es a
+
+findException : Env es -> HasEff (Exc e) es -> e -> OneOf (excTy es)
+findException (SkipE env) Here err = First err
+findException (Ref r env) (There p) err = findException env p err
+findException (SkipE env) (There p) err = Later $ findException env p err
+findException (SkipP env) (There p) err = findException env p err
+
+findError : Env es -> HasEff (Exc e) es -> OneOf (excTy es) -> Maybe e
+findError (SkipE env) Here (First err) = Just err
+findError (SkipE env) Here (Later p) = Nothing -- wrong execption
+findError (SkipE env) (There p) (First err) = Nothing -- wrong exception
+findError (SkipE env) (There p) (Later q) = findError env p q
+findError (Ref r env) (There p) err = findError env p err
+findError (SkipP env) (There p) err = findError env p err
+
+export
+HasEff (Exc e) es => Exception e es where
+  throw err
+      = MkApp $ \env =>
+           pure (Left (findException env %search err))
+  catch (MkApp prog) handler
+      = MkApp $ \env =>
+           do res <- prog env
+              case res of
+                   Left err =>
+                        case findError env %search err of
+                             Nothing => pure (Left err)
+                             Just err' =>
+                                  let MkApp e' = handler err' in
+                                      e' env
+                   Right ok => pure (Right ok) 
+
+export
+handle : App (Exc e :: es) a ->
+         (ok : a -> App es b) ->
+         (err : e -> App es b) -> App es b
+handle (MkApp prog) onok onerr
+    = MkApp $ \env =>
+          do res <- prog (SkipE env)
+             case res of
+                  Left (First err) => 
+                        let MkApp err' = onerr err in
+                            err' env
+                  Left (Later p) => 
+                        -- different exception, so rethrow
+                        pure (Left p)
+                  Right ok => 
+                        let MkApp ok' = onok ok in
+                            ok' env
+
+public export 
+interface PrimIO es where
+  primIO : IO a -> App es a
+  -- Copies the environment, to make sure states are local to threads
+  fork : App es () -> App es ()
 
 copyEnv : Env es -> IO (Env es)
 copyEnv None = pure None
@@ -124,114 +237,36 @@ copyEnv (SkipP env)
          pure (SkipP env')
 
 clearEnv : Env es -> IO (execTy es ())
-clearEnv None = pure ()
+clearEnv None = pure (Right ())
 clearEnv (Ref t env) = clearEnv env
 clearEnv (SkipE env)
     = do e' <- clearEnv env
-         pure (Right e')
+         case e' of
+              Left p => pure $ Left (Later p)
+              Right ok => pure $ Right ok
 clearEnv (SkipP env) = clearEnv env
-
-exec : Env es -> App es t -> (t -> IO (execTy es a)) -> IO (execTy es a)
-exec env (Pure val) k = k val
-exec env (Bind act next) k 
-    = exec env act (\res => exec env (next res) k)
-exec env (BindL act next) k 
-    = exec env act (\res => exec env (next res) k)
-exec env (New val prog) k
-    = do r <- newIORef val
-         exec (Ref r env) prog k
-exec env (Get @{p}) k
-    = do let ref = getState env p
-         val <- readIORef ref
-         k val
-exec env (Put @{p} val) k
-    = do let ref = getState env p
-         writeIORef ref val
-         k ()
-exec env (Throw @{p} e) k 
-    = rewrite sym (appendNilRightNeutral es) in 
-        throwIn env p e {rest = []}
-exec env (Handle prog ok err) k
-    = do res <- exec (SkipE env) prog 
-                     (\res => do res' <- exec env (ok res) k
-                                 pure (Right res'))
-         case res of
-              Left ex => exec env (err ex) k
-              Right ok => pure ok
-exec env (Catch @{p} prog err) k
-    = do res <- exec env prog k
-         case findRes env p res of
-              Just ex => exec env (err ex) k
-              Nothing => pure res
-exec env (Fork proc) k
-    = do fork (do env' <- copyEnv env
-                  exec env proc (\u => clearEnv env)
-                  pure ())
-         k ()
-exec env (Prim io) k 
-    = do op <- primIO io
-         k op
-
-export
-bindL : Linear e =>
-        (1 act : App e a) ->
-        (1 k : a -> App e b) -> App e b
-bindL = BindL
-
-export
-new : a -> App (St a :: es) t -> App es t
-new = New
-
-public export
-interface State t es where
-  get : App es t
-  put : t -> App es ()
-
-export
-HasEff (St t) es => State t es where
-  get = Get
-  put = Put
-
-export
-handle : App (Exc e :: es) a ->
-         (ok : a -> App es b) ->
-         (err : e -> App es b) -> App es b
-handle = Handle
-
-public export
-interface Exception e es where
-  throw : e -> App es a
-  catch : App es a -> (err : e -> App es a) -> App es a
-
-export
-HasEff (Exc e) es => Exception e es where
-  throw = Throw
-  catch = Catch
-
--- Define some useful generic exceptions here?
--- OS, IO, etc? 'SomeException'
--- IOException, define a few POSIX services - files, directories, etc...
-
-public export 
-interface PrimIO es where
-  primIO : IO a -> App es a
-  -- Copies the environment, to make sure states are local to threads
-  fork : App es () -> App es ()
 
 export
 HasEff Sys es => PrimIO es where
-  primIO = Prim . toPrim
-  fork = Fork
+  primIO io 
+      = MkApp $ \env =>
+            do res <- io
+               pure (Right res)
+  fork proc
+      = MkApp $ \env =>
+            do fork (do env' <- copyEnv env
+                        let MkApp p' = proc
+                        p' env'
+                        pure ())
+               pure (Right ())
+
 
 export
 run : App [Sys] a -> IO a
-run prog = exec (SkipP None) prog pure
-
-public export
-0 Has : List (a -> Type) -> a -> Type
-Has [] es = ()
-Has [e] es = e es
-Has (e :: es') es = (e es, Has es' es)
+run (MkApp prog) 
+    = do Right res <- prog (SkipP None)
+               | Left err => absurd err
+         pure res
 
 infix 5 @@
 
