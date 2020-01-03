@@ -4,8 +4,8 @@ import Control.App
 
 public export
 interface Console e where
-  putStr : String -> AppL e ()
-  getStr : AppL e String
+  putStr : String -> App {l} e ()
+  getStr : App {l} e String
 
 export 
 PrimIO e => Console e where
@@ -13,5 +13,5 @@ PrimIO e => Console e where
   getStr = primIO $ getLine
 
 export
-putStrLn : Console e => String -> AppL e ()
+putStrLn : Console e => String -> App {l} e ()
 putStrLn str = putStr (str ++ "\n")

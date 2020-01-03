@@ -9,8 +9,8 @@ data Door : DoorState -> Type where
      MkDoor : (d : DoorState) -> Door d
 
 interface DoorI e where
-  newDoor : (1 prog : (1 d : Door CLOSED) -> AppP p e ()) -> AppP p e ()
-  deleteDoor : (1 d : Door CLOSED) -> AppL e ()
+  newDoor : (1 prog : (1 d : Door CLOSED) -> App {l} e ()) -> App {l} e ()
+  deleteDoor : (1 d : Door CLOSED) -> App {l} e ()
 
 Has [Console] e => DoorI e where
   newDoor f
@@ -29,7 +29,7 @@ closeDoor : (1 d : Door OPEN) -> Door CLOSED
 closeDoor (MkDoor _) = MkDoor _
 
 doorProg : Has [Console, DoorI] e => 
-           AppL e ()
+           App e ()
 doorProg
     = let (>>=) = bindL in
         newDoor $ \d =>

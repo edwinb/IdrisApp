@@ -69,28 +69,20 @@ excTy (Sys :: es) = excTy es
 execTy p es ty = Either (OneOf (excTy es) p) ty
 
 export
-data App : (p : Path) => (es : List Effect) -> Type -> Type where
-     MkApp : (1 prog : Env e -> IO (execTy p e t)) -> App {p} e t
+data App : (l : Path) => (es : List Effect) -> Type -> Type where
+     MkApp : (1 prog : Env e -> IO (execTy l e t)) -> App {l} e t
 
-public export
-AppP : Path -> List Effect -> Type -> Type
-AppP p = App {p}
-
-public export
-AppL : List Effect -> Type -> Type
-AppL es t = forall path . AppP path es t
-
-pureApp : a -> AppP p e a
+pureApp : a -> App {l} e a
 pureApp x = MkApp (\env => pure (Right x))
 
 public export
-data SafeBind : Path -> (p' : Path) -> Type where
-     [search p']
+data SafeBind : Path -> (l' : Path) -> Type where
+     [search l']
+     SafeSame : SafeBind l l
      SafeToThrow : SafeBind NoThrow MayThrow
-     SafeSame : SafeBind p p
 
-bindApp : SafeBind p p' =>
-          AppP p e a -> (a -> AppP p' e b) -> AppP p' e b
+bindApp : SafeBind l l' =>
+          App {l} e a -> (a -> App {l=l'} e b) -> App {l=l'} e b
 bindApp (MkApp prog) k
     = MkApp $ \env =>
               do Right res <- prog env
@@ -102,7 +94,7 @@ absurdWith : (1 x : a) -> OneOf e NoThrow -> any
 absurdWith x (First p) impossible
 
 export
-bindL : AppP NoThrow e a -> (1 k : a -> AppP p e b) -> AppP p e b
+bindL : App {l=NoThrow} e a -> (1 k : a -> App {l} e b) -> App {l} e b
 bindL (MkApp prog) k
     = MkApp $ \env =>
               io_bind (prog env) $ \r =>
@@ -125,11 +117,11 @@ lift (MkApp p)
                           Right ok => pure (Right ok))
 
 export
-Functor (AppP p es) where
+Functor (App {l} es) where
   map f ap = bindApp ap $ \ap' => pureApp (f ap')
 
 export
-Applicative (AppP p es) where
+Applicative (App {l} es) where
   pure = pureApp
   (<*>) f a = bindApp f $ \f' =>
               bindApp a $ \a' => pure (f' a')
@@ -139,12 +131,12 @@ Monad (App es) where
   (>>=) = bindApp -- won't get used, but handy to have the instance
 
 export
-(>>=) : SafeBind p p' =>
-        AppP p e a -> (k : a -> AppP p' e b) -> AppP p' e b
+(>>=) : SafeBind l l' =>
+        App {l} e a -> (k : a -> App {l=l'} e b) -> App {l=l'} e b
 (>>=) = bindApp
 
 export
-new : a -> AppP p (St a :: es) t -> AppP p es t
+new : a -> App {l} (St a :: es) t -> App {l} es t
 new val (MkApp prog)
     = MkApp $ \env => 
           do ref <- newIORef val
@@ -152,8 +144,8 @@ new val (MkApp prog)
 
 public export
 interface State t es where
-  get : AppP p es t
-  put : t -> AppP p es ()
+  get : App {l} es t
+  put : t -> App {l} es ()
 
 export
 HasEff (St t) es => State t es where
@@ -224,9 +216,9 @@ handle (MkApp prog) onok onerr
 
 public export 
 interface PrimIO es where
-  primIO : IO a -> AppP p es a
+  primIO : IO a -> App {l} es a
   -- Copies the environment, to make sure states are local to threads
-  fork : App es () -> AppP p es ()
+  fork : App es () -> App {l} es ()
 
 copyEnv : Env es -> IO (Env es)
 copyEnv None = pure None
