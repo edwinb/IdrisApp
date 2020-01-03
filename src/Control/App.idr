@@ -35,8 +35,13 @@ getState (SkipP env) (There p) = getState env p
 
 public export
 data Path : Type where
+     [noHints]
      MayThrow : Path
      NoThrow : Path
+
+%hint public export
+dpath : Path
+dpath = MayThrow
 
 data OneOf : List Type -> Path -> Type where
      First : e -> OneOf (e :: es) MayThrow
@@ -64,12 +69,12 @@ excTy (Sys :: es) = excTy es
 execTy p es ty = Either (OneOf (excTy es) p) ty
 
 export
-data AppP : Path -> (es : List Effect) -> Type -> Type where
-     MkApp : (1 prog : Env e -> IO (execTy p e t)) -> AppP p e t
+data App : (p : Path) => (es : List Effect) -> Type -> Type where
+     MkApp : (1 prog : Env e -> IO (execTy p e t)) -> App {p} e t
 
 public export
-App : List Effect -> Type -> Type
-App = AppP MayThrow
+AppP : Path -> List Effect -> Type -> Type
+AppP p = App {p}
 
 public export
 AppL : List Effect -> Type -> Type
@@ -255,7 +260,7 @@ Init : List Effect
 Init = [Sys]
 
 export
-run : {auto 0 p : Path} -> AppP p Init a -> IO a
+run : App Init a -> IO a
 run (MkApp prog) 
     = do Right res <- prog (SkipP None)
                | Left err => absurd err
