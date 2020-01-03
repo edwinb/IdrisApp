@@ -41,7 +41,6 @@ blarg
 runTest : IO ()
 runTest 
     = run $ do new (the Int 0) $
-               handle {e=String} test pure
+               handle {err=String} test pure
                      (\err : String => 
                              putStrLn $ "Error: " ++ err)
-

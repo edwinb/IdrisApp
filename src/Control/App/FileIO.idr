@@ -52,7 +52,7 @@ readFile f
   where
     read : List String -> File -> App e (List String)
     read acc h
-        = do eof <- fEOF h
+        = do eof <- FileIO.fEOF h
              if eof
                 then pure (reverse acc)
                 else do str <- fGetStr h

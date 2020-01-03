@@ -8,11 +8,11 @@ data DoorState = OPEN | CLOSED
 data Door : DoorState -> Type where
      MkDoor : (d : DoorState) -> Door d
 
-interface Linear e => DoorI e where
-  newDoor : (1 p : (1 d : Door CLOSED) -> App e ()) -> App e ()
-  deleteDoor : (1 d : Door CLOSED) -> App e ()
+interface DoorI e where
+  newDoor : (1 prog : (1 d : Door CLOSED) -> AppP p e ()) -> AppP p e ()
+  deleteDoor : (1 d : Door CLOSED) -> AppL e ()
 
-Has [Linear, Console] e => DoorI e where
+Has [Console] e => DoorI e where
   newDoor f
       = let (>>=) = bindL in
             do putStrLn "Door created"
@@ -29,7 +29,7 @@ closeDoor : (1 d : Door OPEN) -> Door CLOSED
 closeDoor (MkDoor _) = MkDoor _
 
 doorProg : Has [Console, DoorI] e => 
-           App e ()
+           AppL e ()
 doorProg
     = let (>>=) = bindL in
         newDoor $ \d =>
