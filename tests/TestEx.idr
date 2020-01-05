@@ -36,7 +36,7 @@ test
 
 blarg : Has [Console, StateEx] e => App e ()
 blarg
-    = do new "foo" $ lift $ putStrLn "Here we go!"
+    = do new "foo" $ putStrLn "Here we go!"
 
 runTest : IO ()
 runTest 

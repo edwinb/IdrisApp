@@ -80,7 +80,7 @@ Has [PrimIO, Exception FileEx] e => FileIO e where
 
 export
 withFileIO : Has [PrimIO] e =>
-             App (Exc FileEx :: e) a ->
+             App (FileEx :: e) a ->
              (ok : a -> App e b) ->
              (err : FileEx -> App e b) -> App e b
 withFileIO prog ok err = handle prog ok err

@@ -1,37 +1,15 @@
 module Control.App
 
-import Data.List
 import Data.IORef
 
 public export
-data Effect : Type where
-     St : Type -> Effect
-     Exc : Type -> Effect
-     Sys : Effect
+Error : Type
+Error = Type
 
 public export
-data HasEff : Effect -> List Effect -> Type where
-     Here : HasEff e (e :: es)
-     There : HasEff e es -> HasEff e (e' :: es)
-
-public export
-0 Has : List (a -> Type) -> a -> Type
-Has [] es = ()
-Has [e] es = e es
-Has (e :: es') es = (e es, Has es' es)
-
-export
-data Env : List Effect -> Type where
-     None : Env []
-     Ref : IORef t -> Env es -> Env (St t :: es)
-     SkipE : Env es -> Env (Exc t :: es)
-     SkipP : Env es -> Env (Sys :: es)
-
-getState : Env es -> (p : HasEff (St t) es) -> IORef t
-getState (Ref r env) Here = r
-getState (Ref r env) (There p) = getState env p
-getState (SkipE env) (There p) = getState env p
-getState (SkipP env) (There p) = getState env p
+data HasErr : Error -> List Error -> Type where
+     Here : HasErr e (e :: es)
+     There : HasErr e es -> HasErr e (e' :: es)
 
 public export
 data Path : Type where
@@ -42,6 +20,17 @@ data Path : Type where
 %hint public export
 dpath : Path
 dpath = MayThrow
+
+public export
+0 Has : List (a -> Type) -> a -> Type
+Has [] es = ()
+Has [e] es = e es
+Has (e :: es') es = (e es, Has es' es)
+
+public export
+0 excTy : List Error -> List Type
+excTy [] = []
+excTy (e :: es) = e :: excTy es
 
 data OneOf : List Type -> Path -> Type where
      First : e -> OneOf (e :: es) MayThrow
@@ -58,22 +47,12 @@ Uninhabited (OneOf es NoThrow) where
   uninhabited (First x) impossible
   uninhabited (Later x) impossible
 
-public export
-0 excTy : List Effect -> List Type
-excTy [] = []
-excTy (St t :: es) = excTy es
-excTy (Exc e :: es) = e :: excTy es
-excTy (Sys :: es) = excTy es
-
-0 execTy : Path -> List Effect -> Type -> Type
+0 execTy : Path -> List Error -> Type -> Type
 execTy p es ty = Either (OneOf (excTy es) p) ty
 
 export
-data App : (l : Path) => (es : List Effect) -> Type -> Type where
-     MkApp : (1 prog : Env e -> IO (execTy l e t)) -> App {l} e t
-
-pureApp : a -> App {l} e a
-pureApp x = MkApp (\env => pure (Right x))
+data App : (l : Path) => (es : List Error) -> Type -> Type where
+     MkApp : (1 prog : IO (execTy l e t)) -> App {l} e t
 
 public export
 data SafeBind : Path -> (l' : Path) -> Type where
@@ -83,12 +62,12 @@ data SafeBind : Path -> (l' : Path) -> Type where
 
 bindApp : SafeBind l l' =>
           App {l} e a -> (a -> App {l=l'} e b) -> App {l=l'} e b
-bindApp (MkApp prog) k
-    = MkApp $ \env =>
-              do Right res <- prog env
-                       | Left err => pure (Left (updateP err))
-                 let MkApp ka = k res
-                 ka env
+bindApp (MkApp prog) next
+    = MkApp $
+         do Right res <- prog
+                | Left err => pure (Left (updateP err))
+            let MkApp r = next res
+            r
 
 absurdWith : (1 x : a) -> OneOf e NoThrow -> any
 absurdWith x (First p) impossible
@@ -96,25 +75,15 @@ absurdWith x (First p) impossible
 export
 bindL : App {l=NoThrow} e a -> (1 k : a -> App {l} e b) -> App {l} e b
 bindL (MkApp prog) k
-    = MkApp $ \env =>
-              io_bind (prog env) $ \r =>
-                   case r of
-                        Left err => absurdWith k err
-                        Right res =>
-                              let MkApp ka = k res in ka env
+    = MkApp $
+         io_bind prog $ \r =>
+              case r of
+                   Left err => absurdWith k err
+                   Right res =>
+                         let MkApp ka = k res in ka
 
-export
-lift : App e t -> App (eff :: e) t
-lift (MkApp p)
-    = MkApp (\env => 
-          case env of
-               Ref r env' => p env'
-               SkipP env' => p env'
-               SkipE env' => 
-                  do res <- p env'
-                     case res of
-                          Left err => pure (Left (Later err))
-                          Right ok => pure (Right ok))
+pureApp : a -> App {l} e a
+pureApp x = MkApp $ pure (Right x)
 
 export
 Functor (App {l} es) where
@@ -136,126 +105,100 @@ export
 (>>=) = bindApp
 
 export
-new : a -> App {l} (St a :: es) t -> App {l} es t
-new val (MkApp prog)
-    = MkApp $ \env => 
-          do ref <- newIORef val
-             prog (Ref ref env)
+data State : Type -> List Error -> Type where
+     MkState : IORef t -> State t e
 
-public export
-interface State t es where
-  get : App {l} es t
-  put : t -> App {l} es ()
+%hint export
+mapState : State t e -> State t (eff :: e)
+mapState (MkState s) = MkState s
 
 export
-HasEff (St t) es => State t es where
-  get
-      = MkApp $ \env =>
-            do let ref = getState env %search
-               val <- readIORef ref
-               pure (Right val)
-  put val
-      = MkApp $ \env =>
-            do let ref = getState env %search
-               writeIORef ref val
-               pure (Right ())
-
-public export
-interface Exception e es where
-  throw : e -> App es a
-  catch : App es a -> (err : e -> App es a) -> App es a
-
-findException : Env es -> HasEff (Exc e) es -> e -> OneOf (excTy es) MayThrow
-findException (SkipE env) Here err = First err
-findException (Ref r env) (There p) err = findException env p err
-findException (SkipE env) (There p) err = Later $ findException env p err
-findException (SkipP env) (There p) err = findException env p err
-
-findError : Env es -> HasEff (Exc e) es -> OneOf (excTy es) MayThrow -> Maybe e
-findError (SkipE env) Here (First err) = Just err
-findError (SkipE env) Here (Later p) = Nothing -- wrong execption
-findError (SkipE env) (There p) (First err) = Nothing -- wrong exception
-findError (SkipE env) (There p) (Later q) = findError env p q
-findError (Ref r env) (There p) err = findError env p err
-findError (SkipP env) (There p) err = findError env p err
+get : State t e => App {l} e t
+get @{MkState r}
+    = MkApp $
+          do val <- readIORef r
+             pure (Right val)
 
 export
-HasEff (Exc e) es => Exception e es where
-  throw err
-      = MkApp $ \env =>
-           pure (Left (findException env %search err))
+put : State t e => t -> App {l} e ()
+put @{MkState r} val
+    = MkApp $
+          do writeIORef r val
+             pure (Right ())
+
+export
+new : t -> (State t e => App {l} e a) -> App {l} e a
+new val prog
+    = MkApp $
+         do ref <- newIORef val
+            let st = MkState ref
+            let MkApp res = prog @{st}
+            res
+
+public export
+interface Exception err e where
+  throw : err -> App e a
+  catch : App e a -> (err -> App e a) -> App e a
+
+findException : HasErr e es -> e -> OneOf (excTy es) MayThrow
+findException Here err = First err
+findException (There p) err = Later $ findException p err
+
+findError : HasErr e es -> OneOf (excTy es) MayThrow -> Maybe e
+findError Here (First err) = Just err
+findError (There p) (Later q) = findError p q
+findError _ _ = Nothing
+
+export
+HasErr e es => Exception e es where
+  throw err = MkApp $ pure (Left (findException %search err))
   catch (MkApp prog) handler
-      = MkApp $ \env =>
-           do res <- prog env
+      = MkApp $
+           do res <- prog
               case res of
                    Left err =>
-                        case findError env %search err of
+                        case findError %search err of
                              Nothing => pure (Left err)
                              Just err' =>
                                   let MkApp e' = handler err' in
-                                      e' env
+                                      e'
                    Right ok => pure (Right ok) 
 
 export
-handle : App (Exc err :: e) a ->
+handle : App (err :: e) a ->
          (onok : a -> App e b) ->
          (onerr : err -> App e b) -> App e b
 handle (MkApp prog) onok onerr
-    = MkApp $ \env =>
-          do res <- prog (SkipE env)
+    = MkApp $
+          do res <- prog
              case res of
                   Left (First err) => 
                         let MkApp err' = onerr err in
-                            err' env
+                            err'
                   Left (Later p) => 
                         -- different exception, so rethrow
                         pure (Left p)
                   Right ok => 
                         let MkApp ok' = onok ok in
-                            ok' env
-
-public export 
-interface PrimIO es where
-  primIO : IO a -> App {l} es a
-  -- Copies the environment, to make sure states are local to threads
-  fork : App es () -> App {l} es ()
-
-copyEnv : Env es -> IO (Env es)
-copyEnv None = pure None
-copyEnv (Ref t env)
-    = do val <- readIORef t
-         t' <- newIORef val
-         env' <- copyEnv env
-         pure (Ref t' env')
-copyEnv (SkipE env)
-    = do env' <- copyEnv env
-         pure (SkipE env')
-copyEnv (SkipP env)
-    = do env' <- copyEnv env
-         pure (SkipP env')
-
-export
-HasEff Sys es => PrimIO es where
-  primIO io 
-      = MkApp $ \env =>
-            do res <- io
-               pure (Right res)
-  fork (MkApp p)
-      = MkApp $ \env =>
-            do fork (do env' <- copyEnv env
-                        p env'
-                        pure ())
-               pure (Right ())
+                            ok'
 
 public export
-Init : List Effect
-Init = [Sys]
+interface PrimIO e where
+  primIO : IO a -> App {l} e a
+
+export
+HasErr Void e => PrimIO e where
+  primIO op = MkApp $ map Right op
+
+public export
+Init : List Error
+Init = [Void]
 
 export
 run : App Init a -> IO a
 run (MkApp prog) 
-    = do Right res <- prog (SkipP None)
-               | Left err => absurd err
+    = do Right res <- prog
+               | Left (First err) => absurd err
          pure res
 
 infix 5 @@
