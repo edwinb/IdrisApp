@@ -183,16 +183,25 @@ handle (MkApp prog) onok onerr
                             ok'
 
 public export
+Init : List Error
+Init = [Void]
+
+public export
 interface PrimIO e where
   primIO : IO a -> App {l} e a
+  -- fork starts a new environment, so that any existing state can't get
+  -- passed to it (since it'll be tagged with the wrong environment)
+  fork : (forall e' . PrimIO e' => App {l} e' ()) -> App e ()
 
 export
 HasErr Void e => PrimIO e where
   primIO op = MkApp $ map Right op
-
-public export
-Init : List Error
-Init = [Void]
+  fork thread
+      = MkApp $
+            do PrimIO.fork (do let MkApp res = thread {e'=Init}
+                               res
+                               pure ())
+               pure (Right ())
 
 export
 run : App Init a -> IO a
