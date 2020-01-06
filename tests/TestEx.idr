@@ -34,13 +34,9 @@ test
             then pure ()
             else test
 
-blarg : Has [Console, StateEx] e => App e ()
-blarg
-    = do new "foo" $ putStrLn "Here we go!"
-
 runTest : IO ()
 runTest 
     = run $ do new (the Int 0) $
-               handle {err=String} test pure
-                     (\err : String => 
-                             putStrLn $ "Error: " ++ err)
+               handle test pure
+                      (\err : String =>
+                              putStrLn $ "Error: " ++ err)

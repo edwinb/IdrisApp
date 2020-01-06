@@ -50,9 +50,50 @@ Uninhabited (OneOf es NoThrow) where
 0 execTy : Path -> List Error -> Type -> Type
 execTy p es ty = Either (OneOf (excTy es) p) ty
 
+data AppRes : Type -> Type where
+     MkAppRes : (result : a) -> (1 x : %World) -> AppRes a
+
+data App1Res : Type -> Type where
+     MkApp1Res : (1 result : a) -> (1 x : %World) -> App1Res a
+
+PrimApp : Type -> Type
+PrimApp a = (1 x : %World) -> AppRes a
+
+export
+prim_app_pure : a -> PrimApp a
+prim_app_pure x = \w => MkAppRes x w
+
+export
+prim_app_bind : (1 act : PrimApp a) -> (1 k : a -> PrimApp b) -> PrimApp b
+prim_app_bind fn k w
+    = let MkAppRes x' w' = fn w in k x' w'
+
+toPrimApp : IO a -> PrimApp a
+toPrimApp x 
+    = \w => case toPrim x w of
+                 MkIORes r w => MkAppRes r w
+
+PrimApp1 : Type -> Type
+PrimApp1 a = (1 x : %World) -> App1Res a
+
+export
+prim_app1_pure : (1 x : a) -> PrimApp1 a
+prim_app1_pure x = \w => MkApp1Res x w
+
+export
+prim_app1_bind : (1 act : PrimApp1 a) -> 
+                 (1 k : (1 x : a) -> PrimApp1 b) -> PrimApp1 b
+prim_app1_bind fn k w
+    = let MkApp1Res x' w' = fn w in k x' w'
+
+toPrimApp1 : IO a -> PrimApp1 a
+toPrimApp1 x 
+    = \w => case toPrim x w of
+                 MkIORes r w => MkApp1Res r w
+
 export
 data App : (l : Path) => (es : List Error) -> Type -> Type where
-     MkApp : (1 prog : IO (execTy l e t)) -> App {l} e t
+     MkApp : (1 prog : (1 w : %World) -> AppRes (execTy l e t)) -> App {l} e t
 
 public export
 data SafeBind : Path -> (l' : Path) -> Type where
@@ -63,27 +104,29 @@ data SafeBind : Path -> (l' : Path) -> Type where
 bindApp : SafeBind l l' =>
           App {l} e a -> (a -> App {l=l'} e b) -> App {l=l'} e b
 bindApp (MkApp prog) next
-    = MkApp $
-         do Right res <- prog
-                | Left err => pure (Left (updateP err))
-            let MkApp r = next res
-            r
+    = MkApp $ \world =>
+          let MkAppRes x' world' = prog world in
+              case x' of
+                   Right res =>
+                         let MkApp r = next res in
+                             r world'
+                   Left err => MkAppRes (Left (updateP err)) world'
 
-absurdWith : (1 x : a) -> OneOf e NoThrow -> any
-absurdWith x (First p) impossible
+absurdWith : (1 x : a) -> (1 w : b) -> OneOf e NoThrow -> any
+absurdWith x w (First p) impossible
 
 export
 bindL : App {l=NoThrow} e a -> (1 k : a -> App {l} e b) -> App {l} e b
-bindL (MkApp prog) k
-    = MkApp $
-         io_bind prog $ \r =>
-              case r of
-                   Left err => absurdWith k err
+bindL (MkApp prog) next
+    = MkApp $ \world =>
+          let MkAppRes x' world' = prog world in
+              case x' of
                    Right res =>
-                         let MkApp ka = k res in ka
-
+                         let MkApp r = next res in
+                             r world'
+                   Left err => absurdWith next world' err
 pureApp : a -> App {l} e a
-pureApp x = MkApp $ pure (Right x)
+pureApp x = MkApp $ \w => MkAppRes (Right x) w
 
 export
 Functor (App {l} es) where
@@ -116,24 +159,24 @@ export
 get : State t e => App {l} e t
 get @{MkState r}
     = MkApp $
-          do val <- readIORef r
-             pure (Right val)
+          prim_app_bind (toPrimApp $ readIORef r) $ \val =>
+          MkAppRes (Right val)
 
 export
 put : State t e => t -> App {l} e ()
 put @{MkState r} val
     = MkApp $
-          do writeIORef r val
-             pure (Right ())
+          prim_app_bind (toPrimApp $ writeIORef r val) $ \val =>
+          MkAppRes (Right ())
 
 export
 new : t -> (State t e => App {l} e a) -> App {l} e a
 new val prog
     = MkApp $
-         do ref <- newIORef val
+         prim_app_bind (toPrimApp $ newIORef val) $ \ref =>
             let st = MkState ref
-            let MkApp res = prog @{st}
-            res
+                MkApp res = prog @{st} in
+                res
 
 public export
 interface Exception err e where
@@ -151,18 +194,18 @@ findError _ _ = Nothing
 
 export
 HasErr e es => Exception e es where
-  throw err = MkApp $ pure (Left (findException %search err))
+  throw err = MkApp $ MkAppRes (Left (findException %search err))
   catch (MkApp prog) handler
       = MkApp $
-           do res <- prog
+           prim_app_bind prog $ \res =>
               case res of
                    Left err =>
                         case findError %search err of
-                             Nothing => pure (Left err)
+                             Nothing => MkAppRes (Left err)
                              Just err' =>
                                   let MkApp e' = handler err' in
                                       e'
-                   Right ok => pure (Right ok) 
+                   Right ok => MkAppRes (Right ok)
 
 export
 handle : App (err :: e) a ->
@@ -170,21 +213,40 @@ handle : App (err :: e) a ->
          (onerr : err -> App e b) -> App e b
 handle (MkApp prog) onok onerr
     = MkApp $
-          do res <- prog
+           prim_app_bind prog $ \res =>
              case res of
                   Left (First err) => 
                         let MkApp err' = onerr err in
                             err'
                   Left (Later p) => 
                         -- different exception, so rethrow
-                        pure (Left p)
+                        MkAppRes (Left p)
                   Right ok => 
                         let MkApp ok' = onok ok in
                             ok'
 
+export
+lift : App e a -> App (err :: e) a
+lift (MkApp prog)
+    = MkApp $
+           prim_app_bind prog $ \res =>
+            case res of
+                 Left err => MkAppRes (Left (Later err))
+                 Right ok => MkAppRes (Right ok)
+
 public export
 Init : List Error
 Init = [Void]
+
+export
+run : App {l} Init a -> IO a
+run (MkApp prog)
+    = primIO $ \w =>
+           case (prim_app_bind prog $ \r =>
+                   case r of
+                        Right res => MkAppRes res
+                        Left (First err) => absurd err) w of
+                MkAppRes r w => MkIORes r w
 
 public export
 interface PrimIO e where
@@ -195,20 +257,16 @@ interface PrimIO e where
 
 export
 HasErr Void e => PrimIO e where
-  primIO op = MkApp $ map Right op
+  primIO op = MkApp $ \w => let MkAppRes r w = toPrimApp op w in
+                                MkAppRes (Right r) w
   fork thread
       = MkApp $
-            do PrimIO.fork (do let MkApp res = thread {e'=Init}
-                               res
-                               pure ())
-               pure (Right ())
-
-export
-run : App Init a -> IO a
-run (MkApp prog) 
-    = do Right res <- prog
-               | Left (First err) => absurd err
-         pure res
+            prim_app_bind
+                (toPrimApp $ PrimIO.fork $
+                      do run thread
+                         pure ())
+                    $ \_ =>
+               MkAppRes (Right ())
 
 infix 5 @@
 
