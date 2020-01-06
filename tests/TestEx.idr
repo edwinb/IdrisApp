@@ -4,39 +4,59 @@ import Control.App
 import Control.App.Console
 
 namespace StateEx
+
+  -- An interface which allows incrementing an internal state, and reading
+  -- a string from the console
   public export
   interface Console e => StateEx e where
-    inc : App e Int
-    testRes : String -> App e Bool
+    -- Increment the state and return the new state
+    inc : App e Integer
 
+    -- Prompt for a name and greet the user, returns True if it's endString,
+    -- might throw an exception.
+    greet : (endString : String) -> App e Bool
+
+  -- We can implement StateEx, as long as we can read from the console, we have
+  -- an Integer state available, and we're allowed to throw Strings as
+  -- exceptions.  In this case, we throw an exception on reading a magic
+  -- word...
   export
-  Has [Console, State Int, Exception String] e => StateEx e where
+  Has [Console, State Integer, Exception String] e => StateEx e where
     inc
         = do count <- get
-             put (count + the Int 1)
-             pure count
+             put (count + 1)
+             pure (count + 1)
 
-    testRes str
+    greet endString
         = do count <- get
-             case str of
-                  "DONE" => pure True
-                  "BAD" => throw "Nope"
-                  _ => do putStrLn $ "Hello " ++ str ++ " " ++ show count
-                          pure False
+             inp <- getStr
+             case inp of
+                  "Xyzzy" => throw "Nothing happens"
+                  _ => if inp == endString
+                          then pure True
+                          else do putStrLn $ "Hello " ++ inp
+                                  putStrLn $ "This is greeting number " ++ show count
+                                  pure False
 
-test : Has [StateEx] e => App e ()
-test
+
+-- Use the above interface to keep greeting a user, and print how many
+-- greetings there've been
+greeter : Has [StateEx] e => App e ()
+greeter
     = do putStr "Name: "
          inc
-         x <- getStr
-         done <- testRes x
+         done <- greet "DONE"
          if done
             then pure ()
-            else test
+            else greeter
 
 runTest : IO ()
 runTest 
-    = run $ do new (the Int 0) $
-               handle test pure
+    = run $ do new 0 $ -- initialise greeting count
+               -- We can only run the interface if we handle
+               -- the resulting exception:
+               handle (do greeter
+                          putStrLn "Bye!")
+                      pure
                       (\err : String =>
                               putStrLn $ "Error: " ++ err)
