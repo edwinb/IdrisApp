@@ -12,10 +12,10 @@ CheckState : Bool -> DoorState
 CheckState ok = if ok then OPEN else CLOSED
 
 interface DoorI e where
-  newDoor : App1 One e (Door CLOSED)
+  newDoor : AppL One e (Door CLOSED)
   openDoor : (1 d : Door CLOSED) ->
-             App1 One e (Res Bool (\ok => Door (CheckState ok)))
-  closeDoor : (1 d : Door OPEN) -> App1 One e (Door CLOSED)
+             AppL One e (Res Bool (\ok => Door (CheckState ok)))
+  closeDoor : (1 d : Door OPEN) -> AppL One e (Door CLOSED)
   deleteDoor : (1 d : Door CLOSED) -> App {l} e ()
 
 Has [Console] e => DoorI e where
@@ -32,7 +32,7 @@ Has [Console] e => DoorI e where
 doorProg : Has [Console, DoorI] e => 
            App e ()
 doorProg
-    = app1 $ do
+    = appL $ do
          d <- newDoor
          True @@ d <- openDoor d
               | False @@ d => do app $ putStrLn "Opening failed"

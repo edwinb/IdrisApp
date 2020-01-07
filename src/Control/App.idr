@@ -56,9 +56,9 @@ data Usage = One | Any
 data AppRes : Type -> Type where
      MkAppRes : (result : a) -> (1 x : %World) -> AppRes a
 
-data App1Res : Usage -> Type -> Type where
-     MkApp1Res1 : (1 result : a) -> (1 x : %World) -> App1Res One a
-     MkApp1ResW : (result : a) -> (1 x : %World) -> App1Res Any a
+data AppLRes : Usage -> Type -> Type where
+     MkAppLRes1 : (1 result : a) -> (1 x : %World) -> AppLRes One a
+     MkAppLResW : (result : a) -> (1 x : %World) -> AppLRes Any a
 
 PrimApp : Type -> Type
 PrimApp a = (1 x : %World) -> AppRes a
@@ -77,24 +77,24 @@ toPrimApp x
     = \w => case toPrim x w of
                  MkIORes r w => MkAppRes r w
 
-PrimApp1 : Usage -> Type -> Type
-PrimApp1 u a = (1 x : %World) -> App1Res u a
+PrimAppL : Usage -> Type -> Type
+PrimAppL u a = (1 x : %World) -> AppLRes u a
 
-toPrimApp1 : {u : _} -> IO a -> PrimApp1 u a
-toPrimApp1 x 
+toPrimAppL : {u : _} -> IO a -> PrimAppL u a
+toPrimAppL x 
     = \w => case toPrim x w of
                  MkIORes r w => 
                      case u of
-                          One => MkApp1Res1 r w
-                          Any => MkApp1ResW r w
+                          One => MkAppLRes1 r w
+                          Any => MkAppLResW r w
 
 export
 data App : (l : Path) => (es : List Error) -> Type -> Type where
      MkApp : (1 prog : (1 w : %World) -> AppRes (execTy l e t)) -> App {l} e t
 
 export
-data App1 : Usage -> (es : List Error) -> Type -> Type where
-     MkApp1 : (1 prog : (1 w : %World) -> App1Res u t) -> App1 u e t
+data AppL : Usage -> (es : List Error) -> Type -> Type where
+     MkAppL : (1 prog : (1 w : %World) -> AppLRes u t) -> AppL u e t
 
 public export
 data SafeBind : Path -> (l' : Path) -> Type where
@@ -115,19 +115,19 @@ bindApp (MkApp prog) next
 
 public export
 Cont1Type : Usage -> Type -> Usage -> List Error -> Type -> Type
-Cont1Type One a u e b = (1 x : a) -> App1 u e b
-Cont1Type Any a u e b = (x : a) -> App1 u e b
+Cont1Type One a u e b = (1 x : a) -> AppL u e b
+Cont1Type Any a u e b = (x : a) -> AppL u e b
 
 export
-bindApp1 : {u : _} -> (1 act : App1 u e a) -> 
-           (1 k : Cont1Type u a u' e b) -> App1 u' e b
-bindApp1 {u=One} (MkApp1 fn)
-    = \k => MkApp1 (\w => let MkApp1Res1 x' w' = fn w
-                              MkApp1 res = k x' in
+bindAppL : {u : _} -> (1 act : AppL u e a) -> 
+           (1 k : Cont1Type u a u' e b) -> AppL u' e b
+bindAppL {u=One} (MkAppL fn)
+    = \k => MkAppL (\w => let MkAppLRes1 x' w' = fn w
+                              MkAppL res = k x' in
                               res w')
-bindApp1 {u=Any} (MkApp1 fn)
-    = \k => MkApp1 (\w => let MkApp1ResW x' w' = fn w
-                              MkApp1 res = k x' in
+bindAppL {u=Any} (MkAppL fn)
+    = \k => MkAppL (\w => let MkAppLResW x' w' = fn w
+                              MkAppL res = k x' in
                               res w')
 
 absurdWith1 : (1 w : b) -> OneOf e NoThrow -> any
@@ -148,19 +148,19 @@ bindL (MkApp prog) next
                    Left err => absurdWith2 next world' err
 
 export
-app : (1 p : App {l=NoThrow} e a) -> App1 Any e a
+app : (1 p : App {l=NoThrow} e a) -> AppL Any e a
 app (MkApp prog)
-    = MkApp1 $ \world =>
+    = MkAppL $ \world =>
           let MkAppRes x' world' = prog world in
               case x' of
                    Left err => absurdWith1 world' err
-                   Right res => MkApp1ResW res world'
+                   Right res => MkAppLResW res world'
 
 export
-app1 : (1 p : App1 Any e a) -> App {l} e a
-app1 (MkApp1 prog)
+appL : (1 p : AppL Any e a) -> App {l} e a
+appL (MkAppL prog)
     = MkApp $ \world =>
-          let MkApp1ResW x' world' = prog world in
+          let MkAppLResW x' world' = prog world in
               MkAppRes (Right x') world'
 
 pureApp : a -> App {l} e a
@@ -168,12 +168,12 @@ pureApp x = MkApp $ \w => MkAppRes (Right x) w
 
 public export
 PureType : Usage -> List Error -> Type -> Type
-PureType One e a = (1 x : a) -> App1 One e a
-PureType Any e a = (x : a) -> App1 Any e a
+PureType One e a = (1 x : a) -> AppL One e a
+PureType Any e a = (x : a) -> AppL Any e a
 
-pureApp1 : {u : _} -> PureType u e a
-pureApp1 {u=One} = \x => MkApp1 $ \w => MkApp1Res1 x w
-pureApp1 {u=Any} = \x => MkApp1 $ \w => MkApp1ResW x w
+pureAppL : {u : _} -> PureType u e a
+pureAppL {u=One} = \x => MkAppL $ \w => MkAppLRes1 x w
+pureAppL {u=Any} = \x => MkAppL $ \w => MkAppLResW x w
 
 export
 Functor (App {l} es) where
@@ -194,19 +194,19 @@ export
         App {l} e a -> (k : a -> App {l=l'} e b) -> App {l=l'} e b
 (>>=) = bindApp
 
-namespace App1
+namespace AppL
   export
-  (>>=) : {u : _} -> (1 act : App1 u e a) ->
-          (1 k : Cont1Type u a u' e b) -> App1 u' e b
-  (>>=) = bindApp1
+  (>>=) : {u : _} -> (1 act : AppL u e a) ->
+          (1 k : Cont1Type u a u' e b) -> AppL u' e b
+  (>>=) = bindAppL
 
   export
-  pure : (x : a) -> App1 Any e a
-  pure x =  MkApp1 $ \w => MkApp1ResW x w
+  pure : (x : a) -> AppL Any e a
+  pure x =  MkAppL $ \w => MkAppLResW x w
 
   export
-  pure1 : (1 x : a) -> App1 One e a
-  pure1 x =  MkApp1 $ \w => MkApp1Res1 x w
+  pure1 : (1 x : a) -> AppL One e a
+  pure1 x =  MkAppL $ \w => MkAppLRes1 x w
 
 export
 data State : Type -> List Error -> Type where
