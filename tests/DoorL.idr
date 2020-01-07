@@ -27,13 +27,13 @@ Has [Console] e => DoorI e where
   closeDoor (MkDoor _) = pure1 (MkDoor _)
 
   deleteDoor (MkDoor _)
-      = do putStrLn "Door destroyed"
-           pure ()
+      = putStrLn "Door destroyed"
 
 doorProg : Has [Console, DoorI] e => 
-           App1 Any e ()
+           App e ()
 doorProg
-    = do d <- newDoor
+    = app1 $ do
+         d <- newDoor
          True @@ d <- openDoor d
               | False @@ d => do app $ putStrLn "Opening failed"
                                  app $ deleteDoor d
@@ -43,4 +43,4 @@ doorProg
          app $ deleteDoor d
 
 foo : IO ()
-foo = run (app1 {l=NoThrow} doorProg)
+foo = run doorProg
