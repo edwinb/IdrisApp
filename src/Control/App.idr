@@ -22,6 +22,16 @@ dpath : Path
 dpath = MayThrow
 
 public export
+data Usage : Type where
+     [noHints]
+     One : Usage
+     Any : Usage
+
+%hint public export
+dusage : Usage
+dusage = One
+
+public export
 0 Has : List (a -> Type) -> a -> Type
 Has [] es = ()
 Has [e] es = e es
@@ -49,9 +59,6 @@ Uninhabited (OneOf es NoThrow) where
 
 0 execTy : Path -> List Error -> Type -> Type
 execTy p es ty = Either (OneOf (excTy es) p) ty
-
-public export
-data Usage = One | Any
 
 data AppRes : Type -> Type where
      MkAppRes : (result : a) -> (1 x : %World) -> AppRes a
@@ -93,8 +100,8 @@ data App : (l : Path) => (es : List Error) -> Type -> Type where
      MkApp : (1 prog : (1 w : %World) -> AppRes (execTy l e t)) -> App {l} e t
 
 export
-data AppL : Usage -> (es : List Error) -> Type -> Type where
-     MkAppL : (1 prog : (1 w : %World) -> AppLRes u t) -> AppL u e t
+data AppL : (u : Usage) => (es : List Error) -> Type -> Type where
+     MkAppL : (1 prog : (1 w : %World) -> AppLRes u t) -> AppL {u} e t
 
 public export
 data SafeBind : Path -> (l' : Path) -> Type where
@@ -115,12 +122,12 @@ bindApp (MkApp prog) next
 
 public export
 Cont1Type : Usage -> Type -> Usage -> List Error -> Type -> Type
-Cont1Type One a u e b = (1 x : a) -> AppL u e b
-Cont1Type Any a u e b = (x : a) -> AppL u e b
+Cont1Type One a u e b = (1 x : a) -> AppL {u} e b
+Cont1Type Any a u e b = (x : a) -> AppL {u} e b
 
 export
-bindAppL : {u : _} -> (1 act : AppL u e a) -> 
-           (1 k : Cont1Type u a u' e b) -> AppL u' e b
+bindAppL : {u : _} -> (1 act : AppL {u} e a) ->
+           (1 k : Cont1Type u a u' e b) -> AppL {u=u'} e b
 bindAppL {u=One} (MkAppL fn)
     = \k => MkAppL (\w => let MkAppLRes1 x' w' = fn w
                               MkAppL res = k x' in
@@ -148,7 +155,7 @@ bindL (MkApp prog) next
                    Left err => absurdWith2 next world' err
 
 export
-app : (1 p : App {l=NoThrow} e a) -> AppL Any e a
+app : (1 p : App {l=NoThrow} e a) -> AppL {u=Any} e a
 app (MkApp prog)
     = MkAppL $ \world =>
           let MkAppRes x' world' = prog world in
@@ -157,7 +164,7 @@ app (MkApp prog)
                    Right res => MkAppLResW res world'
 
 export
-appL : (1 p : AppL Any e a) -> App {l} e a
+appL : (1 p : AppL {u=Any} e a) -> App {l} e a
 appL (MkAppL prog)
     = MkApp $ \world =>
           let MkAppLResW x' world' = prog world in
@@ -165,15 +172,6 @@ appL (MkAppL prog)
 
 pureApp : a -> App {l} e a
 pureApp x = MkApp $ \w => MkAppRes (Right x) w
-
-public export
-PureType : Usage -> List Error -> Type -> Type
-PureType One e a = (1 x : a) -> AppL One e a
-PureType Any e a = (x : a) -> AppL Any e a
-
-pureAppL : {u : _} -> PureType u e a
-pureAppL {u=One} = \x => MkAppL $ \w => MkAppLRes1 x w
-pureAppL {u=Any} = \x => MkAppL $ \w => MkAppLResW x w
 
 export
 Functor (App {l} es) where
@@ -196,16 +194,16 @@ export
 
 namespace AppL
   export
-  (>>=) : {u : _} -> (1 act : AppL u e a) ->
-          (1 k : Cont1Type u a u' e b) -> AppL u' e b
+  (>>=) : {u : _} -> (1 act : AppL {u} e a) ->
+          (1 k : Cont1Type u a u' e b) -> AppL {u=u'} e b
   (>>=) = bindAppL
 
   export
-  pure : (x : a) -> AppL Any e a
+  pure : (x : a) -> AppL {u=Any} e a
   pure x =  MkAppL $ \w => MkAppLResW x w
 
   export
-  pure1 : (1 x : a) -> AppL One e a
+  pure1 : (1 x : a) -> AppL e a
   pure1 x =  MkAppL $ \w => MkAppLRes1 x w
 
 export
