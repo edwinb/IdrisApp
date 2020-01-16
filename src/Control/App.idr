@@ -229,6 +229,12 @@ put @{MkState r} val
           MkAppRes (Right ())
 
 export
+modify : State t e => (t -> t) -> App {l} e ()
+modify f
+    = do x <- get
+         put (f x)
+
+export
 new : t -> (State t e => App {l} e a) -> App {l} e a
 new val prog
     = MkApp $
@@ -316,8 +322,10 @@ interface PrimIO e where
 
 export
 HasErr Void e => PrimIO e where
-  primIO op = MkApp $ \w => let MkAppRes r w = toPrimApp op w in
-                                MkAppRes (Right r) w
+  primIO op =
+        MkApp $ \w =>
+            let MkAppRes r w = toPrimApp op w in
+                MkAppRes (Right r) w
   fork thread
       = MkApp $
             prim_app_bind

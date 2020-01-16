@@ -1,6 +1,6 @@
 module Control.App.Console
 
-import Control.App
+import public Control.App
 
 public export
 interface Console e where
