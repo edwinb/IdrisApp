@@ -46,8 +46,15 @@ data OneOf : List Type -> Path -> Type where
      First : e -> OneOf (e :: es) MayThrow
      Later : OneOf es MayThrow -> OneOf (e :: es) MayThrow
 
-updateP : OneOf es p -> OneOf es p'
-updateP {p=MayThrow} {p'=MayThrow} x = x
+public export
+data SafeBind : Path -> (l' : Path) -> Type where
+     [search l']
+     SafeSame : SafeBind l l
+     SafeToThrow : SafeBind NoThrow MayThrow
+
+updateP : SafeBind p p' => OneOf es p -> OneOf es p'
+updateP @{SafeSame} x = x
+updateP @{SafeToThrow} x impossible
 
 Uninhabited (OneOf [] p) where
   uninhabited (First x) impossible
@@ -102,12 +109,6 @@ data App : (l : Path) => (es : List Error) -> Type -> Type where
 export
 data App1 : (u : Usage) => (es : List Error) -> Type -> Type where
      MkApp1 : (1 prog : (1 w : %World) -> App1Res u t) -> App1 {u} e t
-
-public export
-data SafeBind : Path -> (l' : Path) -> Type where
-     [search l']
-     SafeSame : SafeBind l l
-     SafeToThrow : SafeBind NoThrow MayThrow
 
 bindApp : SafeBind l l' =>
           App {l} e a -> (a -> App {l=l'} e b) -> App {l=l'} e b
