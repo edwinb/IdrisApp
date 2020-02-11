@@ -342,3 +342,30 @@ infix 5 @@
 public export
 data Res : (a : Type) -> (a -> Type) -> Type where
      (@@) : (val : a) -> (1 r : t val) -> Res a t
+
+public export
+data FileEx = GenericFileEx Int -- errno
+            | FileReadError
+            | FileWriteError
+            | FileNotFound
+            | PermissionDenied
+            | FileExists
+
+export
+Show FileEx where
+  show (GenericFileEx errno) = "File error: " ++ show errno
+  show FileReadError = "File Read Error"
+  show FileWriteError = "File Write Error"
+  show FileNotFound = "File Not Found"
+  show PermissionDenied = "Permission Denied"
+  show FileExists = "File Exists"
+
+public export
+data IOError
+     = GenericErr String
+     | FileErr FileEx
+
+export
+Show IOError where
+  show (GenericErr str) = "IO error: " ++ str
+  show (FileErr f) = "File error: " ++ show f

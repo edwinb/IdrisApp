@@ -6,23 +6,6 @@ import Data.List
 import Data.Strings
 import System.File
 
-public export
-data FileEx = GenericFileEx Int -- errno
-            | FileReadError
-            | FileWriteError
-            | FileNotFound
-            | PermissionDenied
-            | FileExists
-
-export
-Show FileEx where
-  show (GenericFileEx errno) = "File error: " ++ show errno
-  show FileReadError = "File Read Error"
-  show FileWriteError = "File Write Error"
-  show FileNotFound = "File Not Found"
-  show PermissionDenied = "Permission Denied"
-  show FileExists = "File Exists"
-
 toFileEx : FileError -> FileEx
 toFileEx (GenericFileError i) = GenericFileEx i
 toFileEx FileReadError = FileReadError
@@ -32,9 +15,9 @@ toFileEx PermissionDenied = PermissionDenied
 toFileEx FileExists = FileExists
 
 public export
-interface Has [Exception FileEx] e => FileIO e where
+interface Has [Exception IOError] e => FileIO e where
   withFile : String -> Mode -> 
-             (onError : FileEx -> App e a) ->
+             (onError : IOError -> App e a) ->
              (onOpen : File -> App e a) -> 
              App e a
   fGetStr : File -> App e String
@@ -59,28 +42,28 @@ readFile f
                         read (str :: acc) h
 
 export
-Has [PrimIO, Exception FileEx] e => FileIO e where
+Has [PrimIO, Exception IOError] e => FileIO e where
   withFile fname m onError proc
       = do Right h <- primIO $ openFile fname m
-              | Left err => onError (toFileEx err)
+              | Left err => onError (FileErr (toFileEx err))
            res <- catch (proc h) onError
            pure res
 
   fGetStr f
       = do Right str <- primIO $ fGetLine f
-              | Left err => throw (toFileEx err)
+              | Left err => throw (FileErr (toFileEx err))
            pure str
 
   fPutStr f str
       = do Right () <- primIO $ File.fPutStr f str
-               | Left err => throw (toFileEx err)
+               | Left err => throw (FileErr (toFileEx err))
            pure ()
 
   fEOF f = primIO $ fEOF f
 
 export
 withFileIO : Has [PrimIO] e =>
-             App (FileEx :: e) a ->
+             App (IOError :: e) a ->
              (ok : a -> App e b) ->
-             (err : FileEx -> App e b) -> App e b
+             (err : IOError -> App e b) -> App e b
 withFileIO prog ok err = handle prog ok err
