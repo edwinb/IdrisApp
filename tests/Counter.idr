@@ -3,15 +3,17 @@ module Main
 import Control.App
 import Control.App.Console
 
-count : Has [Console, State Integer] e =>
-        Nat -> Integer -> App e ()
-count Z x
-    = pure ()
-count (S k) x
-    = do val <- get
-         put (val + x)
-         putStr (show val ++ "\n")
-         count k x
+data Counter : Type where
+
+using (Has [Console, State Counter Integer] e)
+  count : Nat -> Integer -> App e ()
+  count Z x
+      = pure ()
+  count (S k) x
+      = do val <- get Counter
+           put Counter (val + x)
+           putStr (show val ++ "\n")
+           count k x
 
 cmain : App Init ()
 cmain

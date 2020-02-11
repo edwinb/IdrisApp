@@ -208,35 +208,36 @@ namespace App1
   pure1 x =  MkApp1 $ \w => MkApp1Res1 x w
 
 export
-data State : Type -> List Error -> Type where
-     MkState : IORef t -> State t e
+data State : (tag : a) -> Type -> List Error -> Type where
+     [search tag]
+     MkState : IORef t -> State tag t e
 
 %hint export
-mapState : State t e -> State t (eff :: e)
+mapState : State tag t e -> State tag t (eff :: e)
 mapState (MkState s) = MkState s
 
 export
-get : State t e => App {l} e t
-get @{MkState r}
+get : (0 tag : _) -> State tag t e => App {l} e t
+get tag @{MkState r}
     = MkApp $
           prim_app_bind (toPrimApp $ readIORef r) $ \val =>
           MkAppRes (Right val)
 
 export
-put : State t e => t -> App {l} e ()
-put @{MkState r} val
+put : (0 tag : _) -> State tag t e => t -> App {l} e ()
+put tag @{MkState r} val
     = MkApp $
           prim_app_bind (toPrimApp $ writeIORef r val) $ \val =>
           MkAppRes (Right ())
 
 export
-modify : State t e => (t -> t) -> App {l} e ()
-modify f
-    = do x <- get
-         put (f x)
+modify : (0 tag : _) -> State tag t e => (t -> t) -> App {l} e ()
+modify tag f
+    = do x <- get tag
+         put tag (f x)
 
 export
-new : t -> (State t e => App {l} e a) -> App {l} e a
+new : t -> (State tag t e => App {l} e a) -> App {l} e a
 new val prog
     = MkApp $
          prim_app_bind (toPrimApp $ newIORef val) $ \ref =>

@@ -21,14 +21,14 @@ namespace StateEx
   -- exceptions.  In this case, we throw an exception on reading a magic
   -- word...
   export
-  Has [Console, State Integer, Exception String] e => StateEx e where
+  Has [Console, State "i" Integer, Exception String] e => StateEx e where
     inc
-        = do count <- get
-             put (count + 1)
+        = do count <- get "i"
+             put "i" (count + 1)
              pure (count + 1)
 
     greet endString
-        = do count <- get
+        = do count <- get "i"
              inp <- getStr
              case inp of
                   "Xyzzy" => throw "Nothing happens"
@@ -37,7 +37,6 @@ namespace StateEx
                           else do putStrLn $ "Hello " ++ inp
                                   putStrLn $ "This is greeting number " ++ show count
                                   pure False
-
 
 -- Use the above interface to keep greeting a user, and print how many
 -- greetings there've been
