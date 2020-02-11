@@ -3,10 +3,12 @@ import Control.App.Console
 interface Random e where
   getRnd : App {l} e Integer
 
-Has [State Integer] e => Random e where
+data Seed : Type where
+
+Has [State Seed Integer] e => Random e where
   getRnd
-      = do modify (\x => (1103515245 * x + 12345) `mod` 4294967296)
-           get
+      = do modify Seed (\x => (1103515245 * x + 12345) `mod` 4294967296)
+           get Seed
 
 initRnd : (seed : Integer) -> (Random e => App e a) -> App e a
 initRnd seed p = new seed p
