@@ -94,7 +94,7 @@ toPrimApp x
 PrimApp1 : Usage -> Type -> Type
 PrimApp1 u a = (1 x : %World) -> App1Res u a
 
-toPrimApp1 : {u : _} -> IO a -> PrimApp1 u a
+toPrimApp1 : {u : _} -> (1 act : IO a) -> PrimApp1 u a
 toPrimApp1 x 
     = \w => case toPrim x w of
                  MkIORes r w => 
@@ -318,6 +318,7 @@ run (MkApp prog)
 public export
 interface PrimIO e where
   primIO : IO a -> App {l} e a
+  primIO1 : (1 act : IO a) -> App1 e a
   -- fork starts a new environment, so that any existing state can't get
   -- passed to it (since it'll be tagged with the wrong environment)
   fork : (forall e' . PrimIO e' => App {l} e' ()) -> App e ()
@@ -328,6 +329,9 @@ HasErr Void e => PrimIO e where
         MkApp $ \w =>
             let MkAppRes r w = toPrimApp op w in
                 MkAppRes (Right r) w
+
+  primIO1 op = MkApp1 $ \w => toPrimApp1 op w
+
   fork thread
       = MkApp $
             prim_app_bind
