@@ -12,24 +12,10 @@ data HasErr : Error -> List Error -> Type where
      There : HasErr e es -> HasErr e (e' :: es)
 
 public export
-data Path : Type where
-     [noHints]
-     MayThrow : Path
-     NoThrow : Path
-
-%hint public export
-dpath : Path
-dpath = MayThrow
+data Path = MayThrow | NoThrow
 
 public export
-data Usage : Type where
-     [noHints]
-     One : Usage
-     Any : Usage
-
-%hint public export
-dusage : Usage
-dusage = One
+data Usage = One | Any
 
 public export
 0 Has : List (a -> Type) -> a -> Type
@@ -103,11 +89,13 @@ toPrimApp1 x
                           Any => MkApp1ResW r w
 
 export
-data App : (l : Path) => (es : List Error) -> Type -> Type where
+data App : {default MayThrow l : Path} ->
+           (es : List Error) -> Type -> Type where
      MkApp : (1 prog : (1 w : %World) -> AppRes (execTy l e t)) -> App {l} e t
 
 export
-data App1 : (u : Usage) => (es : List Error) -> Type -> Type where
+data App1 : {default One u : Usage} ->
+            (es : List Error) -> Type -> Type where
      MkApp1 : (1 prog : (1 w : %World) -> App1Res u t) -> App1 {u} e t
 
 bindApp : SafeBind l l' =>
